@@ -1,0 +1,16 @@
+services:
+  pinterest-importer:
+    build: .
+    restart: unless-stopped
+    init: true
+    shm_size: 256mb
+    mem_limit: 1g
+    pids_limit: 256
+    ports:
+      - "127.0.0.1:8080:3100"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3100/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
