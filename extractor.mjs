@@ -1,12 +1,8 @@
 import { chromium } from 'playwright-core';
 
-export class ImportError extends Error {
-    constructor(status, code, message) {
-        super(message);
-        this.status = status;
-        this.code = code;
-    }
-}
+import { ImportError } from './errors.mjs';
+export { ImportError } from './errors.mjs';
+import { isBoardPath, boardSelection, selectionMedia } from './board-media.mjs';
 
 const browserHosts = new Set([
     'pin.it', 'pinterest.com', 'www.pinterest.com', 'api.pinterest.com',
@@ -24,9 +20,9 @@ export function validateShareUrl(value) {
     const validPath = url.hostname === 'pin.it'
         ? /^\/[a-zA-Z0-9]+\/?$/.test(url.pathname)
         : ['www.pinterest.com', 'pinterest.com'].includes(url.hostname)
-            && /^\/multi-pin-share\/\d+\/?$/.test(url.pathname);
+            && (/^\/multi-pin-share\/\d+\/?$/.test(url.pathname) || isBoardPath(url.pathname));
     if (url.protocol !== 'https:' || url.username || url.password || url.port || !validPath) {
-        throw new ImportError(400, 'invalid_url', 'Use an HTTPS pin.it link or Pinterest multi-pin-share link.');
+        throw new ImportError(400, 'invalid_url', 'Use an HTTPS pin.it link, public Pinterest board, or multi-pin-share link.');
     }
     url.hash = '';
     return url.href;
@@ -84,7 +80,7 @@ export async function extractSelection(value, options = {}) {
     let timer;
     try {
         return await Promise.race([
-            extractInBrowser(browser, url),
+            extractInBrowser(browser, url, options),
             new Promise((_, reject) => {
                 timer = setTimeout(() => reject(new ImportError(504, 'pinterest_timeout',
                     'Pinterest took too long to return the selection. Try again later.')), 45_000);
@@ -96,7 +92,7 @@ export async function extractSelection(value, options = {}) {
     }
 }
 
-async function extractInBrowser(browser, url) {
+async function extractInBrowser(browser, url, options) {
     const context = await browser.newContext({ locale: 'en-US', serviceWorkers: 'block' });
     await context.route('**/*', async route => {
         const request = route.request();
@@ -110,6 +106,18 @@ async function extractInBrowser(browser, url) {
     const page = await context.newPage();
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25_000 });
     const resolved = new URL(page.url());
+    async function initialState() {
+        const script=page.locator('script#__PWS_INITIAL_PROPS__');
+        try {
+            await script.waitFor({state:'attached',timeout:10_000});
+            const text=await script.textContent();
+            if(!text || text.length>8*1024*1024)throw new Error('metadata size');
+            return JSON.parse(text);
+        } catch { throw new ImportError(422,'metadata_unavailable','Pinterest metadata could not be verified. Nothing was imported.'); }
+    }
+    if (['pinterest.com','www.pinterest.com'].includes(resolved.hostname) && isBoardPath(resolved.pathname))
+        return boardSelection(await initialState(),page.url(),options);
+
     if (!['pinterest.com', 'www.pinterest.com'].includes(resolved.hostname)
         || !/^\/multi-pin-share\/\d+\/?$/.test(resolved.pathname)) {
         throw new ImportError(422, 'unsupported_selection', 'The link must open a public multi-pin selection.');
@@ -149,7 +157,7 @@ async function extractInBrowser(browser, url) {
         const previous = images.size;
         for (const image of prepareImages(cards)) images.set(image.pinId, image);
         if (images.size === expectedCount) {
-            return { sourceUrl: page.url(), expectedCount, count: images.size, images: [...images.values()] };
+            return { schemaVersion:2,sourceKind:'selection', sourceUrl: page.url(), expectedCount, count: images.size, images: selectionMedia([...images.values()], await initialState(), options) };
         }
         if (images.size > expectedCount) break;
         unchanged = images.size === previous ? unchanged + 1 : 0;

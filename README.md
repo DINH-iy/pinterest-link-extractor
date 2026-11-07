@@ -1,7 +1,7 @@
 # Pinterest link extractor
 
-A small self-hosted HTTP service that turns a **public multi-pin Pinterest share link**
-into the selected pins' image URLs. Intended for importing images into a sticker maker.
+A small self-hosted HTTP service that turns a **public Pinterest board or multi-pin share link**
+into photo and video metadata for a sticker maker.
 Runs independently of the sticker app, on a 64-bit Raspberry Pi with Docker and Chromium.
 
 No Pinterest login, client secret, or OAuth app is needed. The service uses a fresh signed-out
@@ -81,13 +81,11 @@ files. Download promptly; the returned links are not a guaranteed permanent arch
 
 ## Supported inputs and limits
 
-- HTTPS `pin.it/...` links that resolve to a public multi-pin selection, or a direct
-  `https://www.pinterest.com/multi-pin-share/...` link.
-- Up to 100 selected pins per request, with a 4 KiB JSON request limit.
-- The extracted image count must match Pinterest's declared selection size. Missing or
-  unsupported media causes an error instead of silently returning a partial selection.
-- Whole-board links, individual-pin links, private/login-required content, videos, and
-  carousel expansion are not supported in this version.
+- HTTPS `pin.it/...` links that resolve to a public board or multi-pin selection, direct
+  `https://www.pinterest.com/username/board-slug/`, or `multi-pin-share/...` links.
+- Up to 100 declared pins per board/selection, with a 4 KiB JSON request limit. Unknown or oversized boards reject before reading the feed.
+- A multi-pin selection must match the declared count. Board previews explicitly report unavailable pins and require a terminal public feed bookmark. Incomplete pagination and unsupported media fail closed.
+- Individual-pin links, private/login-required content, carousel expansion, HLS-only videos, and boards requiring further pagination are not supported. Direct MP4 videos are supported with the v2 opt-in below.
 - Browser network requests are restricted to an exact allowlist of Pinterest/CDN hosts.
 - The service has no user authentication or per-user quota; it rejects concurrent imports.
   Before broad public use, configure rate limiting for this hostname in Cloudflare.
@@ -138,3 +136,30 @@ git push -u origin main
 If using the source ZIP instead, first run `git init -b main`, `git add .`, and
 `git commit -m "Add public Pinterest selection importer"` before adding the remote.
 No GitHub repository has been created or pushed automatically.
+
+## Mixed-media boards (v2)
+
+The app can opt in with `{"url":"https://pin.it/example","acceptBoards":true,"includeVideos":true}`.
+Direct public board URLs (`/username/board-slug/`) are accepted too. The board's declared
+`pin_count` must be verified and must not exceed 100 **before** its feed is collected.
+Unknown sizes, private boards, unfinished pagination and unrelated feeds are rejected.
+Media requests are still blocked during extraction; only metadata is returned.
+
+A board preview has `schemaVersion: 2`, `sourceKind: "board"`, `title`, `collectionComplete`,
+`expectedCount` (Pinterest's declared board size), `count` (available media), and
+`unavailableCount`. A signed-out feed can expose fewer items than the declared count.
+The app must disclose that difference before selection; it must never label that preview
+as an import of every pin. This version requires a terminal public feed bookmark;
+boards needing further pagination should be shared as smaller pin selections.
+
+Each item has `mediaType: "image"` or `"video"`. Video items retain their poster in `imageUrl`
+and add an HTTPS `videoUrl` pointing to a direct MP4 on `v1.pinimg.com`, plus `durationMs`
+when advertised. HLS-only videos fail explicitly. Older clients which have not opted in
+are rejected for boards/videos, so a video cannot silently become a still poster.
+Encrypted public Pinterest identifiers (`e1_…`) are supported alongside numeric pin IDs.
+
+The sticker app downloads selected media, reuses its existing video-to-GIF editor to review
+a clip of at most 10 seconds per video, and commits the entire mixed batch only after all
+clips are ready. Its download limits are 10 MiB per image, 100 MiB per video, 250 MiB per
+batch, and a 10-minute batch deadline. The extractor does not download, proxy, convert or
+store videos. Keep the service and client updates together when deploying this feature.

@@ -47,7 +47,7 @@ export function createImportServer({ extract = extractSelection } = {}) {
         try {
             const body = await readJson(request);
             const url = validateShareUrl(body?.url);
-            send(200, await extract(url));
+            send(200, await extract(url, {includeVideos:body.includeVideos===true,acceptBoards:body.acceptBoards===true}));
         } catch (error) {
             if (error instanceof ImportError) send(error.status, { error: error.code, message: error.message });
             else {
