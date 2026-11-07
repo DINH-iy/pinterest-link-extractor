@@ -161,5 +161,33 @@ Encrypted public Pinterest identifiers (`e1_…`) are supported alongside numeri
 The sticker app downloads selected media, reuses its existing video-to-GIF editor to review
 a clip of at most 10 seconds per video, and commits the entire mixed batch only after all
 clips are ready. Its download limits are 10 MiB per image, 100 MiB per video, 250 MiB per
-batch, and a 10-minute batch deadline. The extractor does not download, proxy, convert or
+batch for both downloaded bytes and prepared clips, and a 10-minute batch deadline. The extractor does not download, proxy, convert or
 store videos. Keep the service and client updates together when deploying this feature.
+
+## Deploy the mixed-media version
+
+After committing and pushing this branch from the Mac, update the extractor checkout on
+the Pi (the branch is `codex/mixed-board-import`):
+
+```bash
+git fetch origin
+git switch codex/mixed-board-import
+git pull --ff-only
+docker compose up -d --build
+curl --fail http://127.0.0.1:8080/health
+```
+
+If Docker requires it on your Pi, use `sudo docker compose up -d --build`. Then verify a
+real board preview, which checks Chromium and Pinterest as well as the HTTP process:
+
+```bash
+curl --fail-with-body http://127.0.0.1:8080/api/pinterest/import \
+  -H 'Content-Type: application/json' \
+  --data '{"url":"https://pin.it/31w30freR","acceptBoards":true,"includeVideos":true}'
+```
+
+The response should identify `sourceKind: "board"`, report declared/available/unavailable
+counts, and include `mediaType: "video"` plus a direct MP4 `videoUrl` for videos. Counts
+can change as the owner edits the board. This request downloads no image or video files.
+The Cloudflare Tunnel route and app endpoint remain unchanged. Deploying the service
+is a separate step; changing files in VS Code does not update the running Pi container.
