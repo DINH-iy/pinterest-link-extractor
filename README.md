@@ -191,3 +191,37 @@ counts, and include `mediaType: "video"` plus a direct MP4 `videoUrl` for videos
 can change as the owner edits the board. This request downloads no image or video files.
 The Cloudflare Tunnel route and app endpoint remain unchanged. Deploying the service
 is a separate step; changing files in VS Code does not update the running Pi container.
+
+### Diagnose selection-only errors after deployment
+
+Board/video support is on `codex/mixed-board-import`; `main` still contains the
+selection-only importer. From the extractor checkout on the Pi, verify and rebuild:
+
+```bash
+git branch --show-current
+git rev-parse --short HEAD
+git fetch origin
+git switch codex/mixed-board-import
+git pull --ff-only
+docker compose up -d --build --force-recreate
+docker compose logs --tail=60
+```
+
+The Docker image must include `board-media.mjs` and `errors.mjs` alongside
+`extractor.mjs`. Earlier Dockerfiles omitted these modules, preventing a newly built
+board-support container from starting. `npm test` now checks that the files copied
+by the Dockerfile can load the HTTP application.
+
+Compare a board import through `http://127.0.0.1:8080/api/pinterest/import` with the
+public HTTPS endpoint. A difference means the tunnel routes to another service.
+The health response alone does not verify board support.
+
+Live checks on 2026-11-09 with the board-support code:
+
+| Short link | Board | Result |
+| --- | --- | --- |
+| `https://pin.it/ozD1q2COi` | Cool Shit | 132 declared pins; exceeds the 100-pin limit |
+| `https://pin.it/31w30freR` | Crochet | 15 available of 16 declared; 1 video |
+| `https://pin.it/ENue35Kpm` | Rebranding Campaign | 11 available of 11 declared; 6 videos |
+
+These counts can change. Share a selection of at most 100 pins from the larger board.
