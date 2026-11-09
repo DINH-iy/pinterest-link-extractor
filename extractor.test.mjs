@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { allowedBrowserUrl, prepareImages, validateShareUrl } from './extractor.mjs';
 
-test('rejects arbitrary hosts, credentials, ports and board links before opening a browser', () => {
+test('rejects arbitrary hosts, credentials and ports before opening a browser', () => {
     for (const url of ['http://pin.it/abc', 'https://pin.it.evil.test/abc', 'https://user:pass@pin.it/abc',
-        'https://pin.it:8443/abc', 'http://127.0.0.1/', 'https://www.pinterest.com/user/board/', null]) {
+        'https://pin.it:8443/abc', 'http://127.0.0.1/', null]) {
         assert.throws(() => validateShareUrl(url), error => error.status === 400);
     }
+    assert.equal(validateShareUrl('https://www.pinterest.com/user/board/'),'https://www.pinterest.com/user/board/');
+    assert.throws(()=>validateShareUrl('https://www.pinterest.com/pin/123/'));
     assert.equal(validateShareUrl('https://pin.it/3b1AO6JOq'), 'https://pin.it/3b1AO6JOq');
     assert.equal(validateShareUrl('https://www.pinterest.com/multi-pin-share/123/?invite_code=abc'),
         'https://www.pinterest.com/multi-pin-share/123/?invite_code=abc');

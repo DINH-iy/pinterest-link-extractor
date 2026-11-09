@@ -25,7 +25,6 @@ test('HTTP validation rejects invalid and oversized inputs before invoking Chrom
         for (const [body, status, type] of [
             ['not-json', 400], ['null', 400], ['{"url":3}', 400],
             ['{"url":"https://127.0.0.1/"}', 400],
-            ['{"url":"https://www.pinterest.com/user/board/"}', 400],
             ['{"url":"https://pin.it/abc"}', 415, 'text/plain'],
             [JSON.stringify({ url: 'https://pin.it/abc', padding: 'x'.repeat(4096) }), 413],
         ]) {
